@@ -443,7 +443,8 @@ function points(tip, r, m){
   return {ten, diff, vfbG, oppG, exact: hg && ag, base: (ten ? 2 : 0) + (diff ? 1 : 0) + (hg ? 1 : 0) + (ag ? 1 : 0)};
 }
 const users = () => Object.entries(D.users || {}).filter(([k, u]) => u && u.name).map(([k, u]) => ({k, ...u}));
-const uName = k => ((D.users || {})[k] || {}).name || '?';
+const dName = u => !u ? '?' : (u.vorname ? `${u.vorname} „${u.name}“` : (u.name || '?'));
+const uName = k => dName((D.users || {})[k]);
 const tipOf = (mid, k) => ((D.tips || {})[mid] || {})[k] || null;
 function validTip(m, k){
   const t = tipOf(m.id, k);
@@ -547,7 +548,7 @@ function renderLoginBox(){
   const isNew = !u, needPin = u && !u.pin;
   box.innerHTML = `<div class="card hl">
     <div class="row between"><b style="font-size:20px">${esc(name)}</b><button class="btn sec small" id="lcancel">Andere wählen</button></div>
-    ${isNew ? `<label class="l">Dein Vorname (für die Runde sichtbar, freiwillig)</label><input class="f" id="lvn" maxlength="20" autocomplete="given-name">` : ''}
+    ${isNew ? `<label class="l">Dein Vorname</label><input class="f" id="lvn" maxlength="20" autocomplete="given-name"><div class="small muted" style="margin:6px 2px 0">So erscheinst du: <b id="lprev">Vorname</b> „${esc(name)}“</div>` : ''}
     <label class="l">${isNew || needPin ? 'Wähle eine vierstellige PIN' : 'Deine PIN'}</label>
     <input class="f" id="lpin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">
     ${isNew || needPin ? `<label class="l">PIN wiederholen</label><input class="f" id="lpin2" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off">` : ''}
@@ -556,10 +557,12 @@ function renderLoginBox(){
     ${isNew ? '<p class="small muted" style="margin:10px 2px 0">Mit der PIN meldest du dich auch auf einem anderen Handy an.</p>' : ''}
   </div>`;
   $('#lcancel').onclick = () => { loginPick = null; renderLoginBox(); };
+  const lvn = $('#lvn'); if (lvn) lvn.oninput = () => { $('#lprev').textContent = lvn.value.trim() || 'Vorname'; };
   $('#lgo').onclick = () => doLogin(name, isNew, needPin);
 }
 async function doLogin(name, isNew, needPin){
   const err = $('#lerr'), pin = ($('#lpin').value || '').trim();
+  if (isNew && ($('#lvn').value || '').trim().length < 2) { err.textContent = 'Bitte deinen Vornamen eintragen.'; return; }
   if (!/^\d{4}$/.test(pin)) { err.textContent = 'Die PIN hat vier Ziffern.'; return; }
   if ((isNew || needPin) && pin !== ($('#lpin2').value || '').trim()) { err.textContent = 'Die beiden PINs stimmen nicht überein.'; return; }
   if (dbError || !db) { err.textContent = 'Keine Verbindung zur Datenbank.'; return; }
@@ -645,7 +648,7 @@ function render(){
   const hc = $('#hdrComp');
   if (cur && compLogo(cur.comp)) { hc.src = compLogo(cur.comp); hc.alt = compName(cur.comp); hc.hidden = false; } else hc.hidden = true;
   const u = (D.users || {})[me] || {};
-  $('#subtitle').textContent = `VfB-Tipprunde · ${u.name || ''}`;
+  $('#subtitle').textContent = `VfB-Tipprunde · ${dName(u)}`;
   const y = window.scrollY;
   const E = evaluate();
   main.innerHTML = ({spiele: vSpiele, tabelle: vTabelle, spieler: vSpieler, wettbewerb: vWettbewerb, mehr: vMehr}[view] || vSpiele)(ms, cur, E);
@@ -682,7 +685,7 @@ function tipStepper(m){
 function whoTipped(m){
   const us = users(), done = us.filter(u => tipOf(m.id, u.k)), open = us.filter(u => !tipOf(m.id, u.k));
   return `<div class="who"><div class="row between"><span><b>${done.length} von ${us.length}</b> haben getippt</span></div>
-    ${open.length ? `<div class="muted" style="margin-top:4px">Noch offen: ${open.map(u => esc(u.name)).join(', ')}</div>
+    ${open.length ? `<div class="muted" style="margin-top:4px">Noch offen: ${open.map(u => esc(dName(u))).join(', ')}</div>
     <button class="btn wa small" style="margin-top:10px" data-wa="${m.id}">💬 Erinnerung per WhatsApp</button>` : '<div class="muted" style="margin-top:4px">Alle sind dabei 👍</div>'}</div>`;
 }
 function chipsFor(x, m){
@@ -702,9 +705,9 @@ function allTipsList(m, r, provisional){
     const tip = validTip(m, u.k); let p = null, b = null;
     if (tip && r) { b = points(tip, r, m); p = b.base * (tip.j ? 2 : 1); }
     return {u, tip, p, b};
-  }).sort((a, b) => ((b.p ?? -1) - (a.p ?? -1)) || a.u.name.localeCompare(b.u.name, 'de'));
+  }).sort((a, b) => ((b.p ?? -1) - (a.p ?? -1)) || dName(a.u).localeCompare(dName(b.u), 'de'));
   return `<div class="tips">${rows.map(x => `<div class="t ${x.u.k === me ? 'me' : ''}">
-      <span class="grow ell"><b>${esc(x.u.name)}</b>${x.u.vorname ? ` <span class="vn">${esc(x.u.vorname)}</span>` : ''}</span>
+      <span class="grow ell"><b>${esc(dName(x.u))}</b></span>
       <span class="pill">${x.tip ? x.tip.h + ':' + x.tip.a : '–'}</span>${x.tip && x.tip.j ? '<span title="Joker">🃏</span>' : ''}
       ${r ? `<span class="pill ${x.p > 0 ? (provisional ? 'red' : 'ok') : ''}" style="min-width:52px;text-align:center">${x.p ?? 0} P</span>` : ''}
     </div>`).join('')}</div>`;
@@ -790,7 +793,7 @@ function vTabelle(ms, cur, E){
       const x = L && L.per[k];
       const badges = (rk === 1 && E.hist.length ? '🏆' : '') + (E.king.includes(k) ? '👑' : '') + (E.gurke.includes(k) ? '🥒' : '') + (E.lantern.includes(k) ? '🏮' : '');
       return `<tr class="${k === me ? 'me' : ''}" data-u="${k}"><td class="pl">${rk}</td><td class="ar">${ar}</td>
-        <td><span class="nm">${esc(u.name)}</span><span class="badges">${badges}</span>${u.vorname ? `<div class="vn">${esc(u.vorname)}</div>` : ''}
+        <td><span class="nm">${esc(dName(u))}</span><span class="badges">${badges}</span>
           ${x ? `<div class="last">Zuletzt: ${x.tip ? x.tip.h + ':' + x.tip.a + (x.tip.j ? ' 🃏' : '') : 'kein Tipp'} · ${x.p} P</div>` : ''}
           <div class="ubd" ${openU.has(k) ? '' : 'hidden'}>${x ? chipsFor(x, L.m) : ''}</div></td>
         <td class="ex">${E.ex[k]}</td><td class="pts">${E.tot[k]}</td></tr>`;
@@ -835,7 +838,7 @@ function optimists(E){
     ${rows.map((r, i) => {
       const w = Math.abs(r.v) / mx * 50, left = r.v >= 0 ? 50 : 50 - w;
       const tag = i === 0 && r.v > 0.25 ? ' 🌹' : (i === rows.length - 1 && r.v < -0.25 ? ' 🌧️' : '');
-      return `<div style="margin:10px 0"><div class="row between"><span class="ell"><b>${esc(r.u.name)}</b>${tag}</span><span class="small" style="font-variant-numeric:tabular-nums">${r.v > 0 ? '+' : ''}${num(r.v.toFixed(1))}</span></div>
+      return `<div style="margin:10px 0"><div class="row between"><span class="ell"><b>${esc(dName(r.u))}</b>${tag}</span><span class="small" style="font-variant-numeric:tabular-nums">${r.v > 0 ? '+' : ''}${num(r.v.toFixed(1))}</span></div>
         <div class="bar"><i style="left:50%;width:1px;background:#c7c7cc"></i><i style="left:${left}%;width:${Math.max(1, w)}%;background:${r.v >= 0 ? 'var(--red)' : '#5b6b7a'}"></i></div></div>`;
     }).join('')}
     <div class="small muted">🌹 Rosarote VfB-Brille · 🌧️ Ewiger Schwarzseher</div></div>`;
@@ -929,7 +932,7 @@ function vWettbewerb(ms, cur, E){
 function vMehr(){
   const u = D.users[me] || {};
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  return `<h2>Du</h2><div class="card"><div class="row between"><div><b style="font-size:18px">${esc(u.name)}</b>${u.vorname ? `<div class="muted small">${esc(u.vorname)}</div>` : ''}</div><button class="btn sec small" id="logout">Abmelden</button></div></div>
+  return `<h2>Du</h2><div class="card"><div class="row between"><div><b style="font-size:18px">${esc(dName(u))}</b></div><button class="btn sec small" id="logout">Abmelden</button></div></div>
   <h2>Regeln</h2><div class="card"><ul class="rules">
     <li>Jeder tippt das Ergebnis, zum Beispiel 2:1. Getippt wird bis zum Anpfiff, danach ist gesperrt.</li>
     <li><b>Punkte:</b> Tendenz 2, Tordifferenz 1, VfB-Tore 1, Gegentore 1. Das exakte Ergebnis bringt damit 5 Punkte.</li>
@@ -957,7 +960,7 @@ function bind(main, ms, E){
   main.querySelectorAll('[data-j]').forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.j); if (m) toggleJoker(m); });
   main.querySelectorAll('[data-wa]').forEach(b => b.onclick = () => {
     const m = ms.find(x => x.id === b.dataset.wa); if (!m) return;
-    const open = users().filter(u => !tipOf(m.id, u.k)).map(u => u.name);
+    const open = users().filter(u => !tipOf(m.id, u.k)).map(dName);
     const txt = `☕ Pausentee: ${m.home.name} gegen ${m.away.name}, ${fmtWhen(m)}.\nNoch nicht getippt: ${open.join(', ')}.\nJetzt tippen: ${location.origin + location.pathname}`;
     window.open('https://wa.me/?text=' + encodeURIComponent(txt), '_blank');
   });
@@ -1015,7 +1018,7 @@ async function renderAdmin(){
       <div class="row" style="gap:6px"><input id="h_${m.id}" inputmode="numeric" value="${r ? r.h : ''}"><b>:</b><input id="a_${m.id}" inputmode="numeric" value="${r ? r.a : ''}">
       <button class="btn small" data-save="${m.id}">Setzen</button>${r && r.src === 'manual' ? `<button class="btn sec small" data-auto="${m.id}">Automatik</button>` : ''}</div></div>`; }).join('') : '<div class="empty">Noch kein gewertetes Spiel angepfiffen.</div>'}
   </div>
-  <h2>Teilnehmer</h2><div class="card adm small">${users().sort((a, b) => a.name.localeCompare(b.name, 'de')).map(u => `<div class="mrow"><div class="grow"><b>${esc(u.name)}</b>${u.vorname ? ' · ' + esc(u.vorname) : ''}<div class="muted">dabei seit ${u.joinedAt ? esc(fmtDay(u.joinedAt)) : '?'}${u.pin ? '' : ' · PIN zurückgesetzt'}</div></div>
+  <h2>Teilnehmer</h2><div class="card adm small">${users().sort((a, b) => dName(a).localeCompare(dName(b), 'de')).map(u => `<div class="mrow"><div class="grow"><b>${esc(dName(u))}</b><div class="muted">dabei seit ${u.joinedAt ? esc(fmtDay(u.joinedAt)) : '?'}${u.pin ? '' : ' · PIN zurückgesetzt'}</div></div>
     <div class="row" style="gap:6px"><button class="btn sec small" data-pin="${u.k}">Neue PIN</button><button class="btn sec small" data-del="${u.k}">Löschen</button></div></div>`).join('') || '<div class="empty">Noch niemand.</div>'}</div>
   <button class="btn sec" style="margin-top:12px" id="aout">Admin verlassen</button>`;
   main.querySelectorAll('[data-save]').forEach(b => b.onclick = async () => {
