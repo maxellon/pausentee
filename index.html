@@ -179,6 +179,24 @@ svg text{font-family:inherit}
 .opt .bar i{position:absolute;top:0;bottom:0;border-radius:4px}
 ul.rules{padding-left:20px;margin:6px 0}
 ul.rules li{margin:5px 0}
+.nc{text-transform:none}
+.tk{padding:10px 0;border-top:1px solid var(--line)}
+.tk:first-child{border-top:0}
+.tk .sc{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px}
+.tk .tm{display:flex;align-items:center;gap:6px;min-width:0;font-weight:650;font-size:14px}
+.tk .tm.r{justify-content:flex-end;text-align:right}
+.tk .tm img{width:22px;height:22px;object-fit:contain;flex:none}
+.tk .res{font-weight:800;font-size:18px;min-width:54px;text-align:center;font-variant-numeric:tabular-nums}
+.tk .st{text-align:center;font-size:12px;color:var(--muted);margin-top:2px}
+.tk .st.on{color:var(--red);font-weight:800}
+.tk.vfb{background:var(--red-soft);border-radius:10px;padding:10px 8px;margin:0 -8px}
+.evs{display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;margin-top:6px;font-size:12px;color:var(--muted)}
+.evs .r{text-align:right;grid-column:2}
+.evs .l{grid-column:1}
+.lv{display:inline-block;font-size:11px;font-weight:800;border-radius:6px;padding:1px 5px;margin-left:6px;background:var(--bg);color:var(--muted);flex:none}
+.lv.on{background:var(--red);color:#fff}
+.chg{font-size:11px;font-weight:800;margin-left:2px}
+.chg.up{color:var(--ok)} .chg.down{color:var(--red)}
 .adm input{width:56px;border:1.5px solid var(--line);border-radius:10px;padding:8px;font-size:16px;text-align:center}
 </style>
 </head>
@@ -384,12 +402,70 @@ async function loadStandings(slugC){
     const groups = (j.children || []).map(ch => ({name: ch.name, entries: ((ch.standings && ch.standings.entries) || []).map(e => {
       const s = {}; (e.stats || []).forEach(x => s[x.name] = x);
       return {id: String(e.team.id), name: deTeam(e.team.shortDisplayName || e.team.displayName), logo: e.team.logos && e.team.logos[0] && e.team.logos[0].href,
-        rank: +(s.rank && s.rank.value) || 0, gp: s.gamesPlayed ? s.gamesPlayed.displayValue : '', gd: s.pointDifferential ? s.pointDifferential.displayValue : '', pts: s.points ? s.points.displayValue : '', color: e.note && e.note.color};
+        rank: +(s.rank && s.rank.value) || 0, gp: s.gamesPlayed ? s.gamesPlayed.displayValue : '', gd: s.pointDifferential ? s.pointDifferential.displayValue : '', pts: s.points ? s.points.displayValue : '', color: e.note && e.note.color,
+        gpN: +(s.gamesPlayed && s.gamesPlayed.value) || 0, gdN: +(s.pointDifferential && s.pointDifferential.value) || 0, ptsN: +(s.points && s.points.value) || 0, gfN: +(s.pointsFor && s.pointsFor.value) || 0};
     }).sort((a, b) => a.rank - b.rank)}));
     standings[slugC] = {at: now(), groups};
   } catch (err) { standings[slugC] = {at: now(), groups: [], err: true}; }
   loadingS.delete(slugC);
   render();
+}
+
+const scoreboards = {}, loadingB = new Set();
+async function loadScoreboard(slugC){
+  if (loadingB.has(slugC) || (scoreboards[slugC] && now() - scoreboards[slugC].at < 25e3)) return;
+  loadingB.add(slugC);
+  try {
+    const j = await getJSON(API + slugC + '/scoreboard?dates=' + dayKey(now()).replace(/-/g, ''));
+    const evs = (j.events || []).map(e => {
+      const c = (e.competitions && e.competitions[0]) || {}, st = (c.status && c.status.type) || {};
+      const cs = c.competitors || [];
+      const side = ha => { const x = cs.find(q => q.homeAway === ha) || {}; const sc = parseInt(typeof x.score === 'object' ? x.score && x.score.displayValue : x.score, 10);
+        return {id: String((x.team && x.team.id) || ''), name: deTeam((x.team && (x.team.shortDisplayName || x.team.displayName)) || ''), logo: (x.team && x.team.logo) || '', score: Number.isFinite(sc) ? sc : null}; };
+      const ev = (c.details || []).filter(d => d.scoringPlay || d.redCard).map(d => ({
+        min: (d.clock && d.clock.displayValue) || '', team: String((d.team && d.team.id) || ''), red: !!d.redCard && !d.scoringPlay,
+        name: ((d.athletesInvolved || [])[0] || {}).displayName || '', pen: !!d.penaltyKick, og: !!d.ownGoal}));
+      return {id: String(e.id), t: Date.parse(e.date), state: st.state || 'pre', completed: !!st.completed, clock: (c.status && c.status.displayClock) || '', ht: st.name === 'STATUS_HALFTIME', home: side('home'), away: side('away'), ev};
+    }).sort((a, b) => a.t - b.t);
+    scoreboards[slugC] = {at: now(), events: evs};
+  } catch (err) { scoreboards[slugC] = {at: now(), events: [], err: true}; console.warn('[Pausentee] Scoreboard', err); }
+  loadingB.delete(slugC);
+  render();
+}
+function liveTable(entries, evs){
+  const rows = entries.map(e => ({...e, live: null}));
+  const by = {}; rows.forEach(r => by[r.id] = r);
+  const waiting = [];
+  evs.forEach(ev => { if (ev.state !== 'post') [ev.home.id, ev.away.id].forEach(id => by[id] && waiting.push(by[id].gpN)); });
+  const cnt = {}; waiting.forEach(g => cnt[g] = (cnt[g] || 0) + 1);
+  const base = waiting.length ? +Object.keys(cnt).sort((a, b) => cnt[b] - cnt[a])[0] : null;
+  for (const ev of evs) {
+    if (ev.state === 'pre' || ev.home.score == null || ev.away.score == null) continue;
+    const pairs = [[ev.home, ev.away], [ev.away, ev.home]];
+    for (const [me2, ot] of pairs) {
+      const r = by[me2.id]; if (!r) continue;
+      r.live = {on: ev.state === 'in', score: ev.home.score + ':' + ev.away.score};
+      if (ev.state === 'post' && (base == null || r.gpN !== base)) continue;
+      r.gpN++; r.gfN += me2.score; r.gdN += me2.score - ot.score; r.ptsN += me2.score > ot.score ? 3 : me2.score === ot.score ? 1 : 0;
+    }
+  }
+  rows.sort((a, b) => b.ptsN - a.ptsN || b.gdN - a.gdN || b.gfN - a.gfN || a.rank - b.rank);
+  rows.forEach((r, i) => { r.newRank = i + 1; r.chg = r.rank - r.newRank; });
+  return rows;
+}
+function tickerHtml(evs){
+  const order = {in: 0, pre: 1, post: 2};
+  return [...evs].sort((a, b) => (order[a.state] - order[b.state]) || a.t - b.t).map(ev => {
+    const isV = ev.home.id === VFB || ev.away.id === VFB;
+    const st = ev.state === 'in' ? `<div class="st on">● ${ev.ht ? 'Halbzeit' : esc(ev.clock)}</div>` : ev.state === 'pre' ? `<div class="st">${fT.format(ev.t)} Uhr</div>` : `<div class="st">Ende</div>`;
+    const evRow = x => `${x.red ? '🟥' : '⚽'} ${esc(x.min)} ${esc(x.name)}${x.pen ? ' (Elfmeter)' : ''}${x.og ? ' (Eigentor)' : ''}`;
+    const hs = ev.ev.filter(x => x.team === ev.home.id), as = ev.ev.filter(x => x.team === ev.away.id);
+    return `<div class="tk ${isV ? 'vfb' : ''}"><div class="sc">
+      <div class="tm"><img src="${esc(ev.home.logo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="ell">${esc(ev.home.name)}</span></div>
+      <div><div class="res">${ev.state === 'pre' ? '–:–' : ev.home.score + ':' + ev.away.score}</div>${st}</div>
+      <div class="tm r"><span class="ell">${esc(ev.away.name)}</span><img src="${esc(ev.away.logo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"></div></div>
+      ${hs.length || as.length ? `<div class="evs">${hs.map(x => `<div class="l">${evRow(x)}</div>`).join('')}${as.map(x => `<div class="r">${evRow(x)}</div>`).join('')}</div>` : ''}</div>`;
+  }).join('');
 }
 
 /* =========================================================
@@ -525,7 +601,7 @@ function renderLogin(){
     <input class="search" id="lsearch" placeholder="Suchen oder eigenen Namen eintippen" autocomplete="off" maxlength="30">
     <div class="legends" id="legends"></div>`;
   $('#lsearch').addEventListener('input', renderLegendList);
-  renderLegendList(); renderLoginBox();
+  renderLegendList(); renderLoginBox(); fixVfb($('#main'));
 }
 function renderLegendList(){
   const el = $('#legends'); if (!el) return;
@@ -639,6 +715,7 @@ async function toggleJoker(m){
 /* =========================================================
    RENDER
    ========================================================= */
+function fixVfb(root){ root.querySelectorAll('h2').forEach(h => { if (h.innerHTML.includes('VfB') && !h.querySelector('.nc')) h.innerHTML = h.innerHTML.replace(/VfB/g, '<span class="nc">VfB</span>'); }); }
 function render(){
   const main = $('#main');
   if (dbError === 'rules') { $('#nav').hidden = true; main.innerHTML = `<div class="card"><h2 style="margin-top:4px">Fast geschafft</h2><p>Die Datenbank lässt den Pausentee noch nicht rein. In der Firebase-Konsole fehlt bei den Regeln der Eintrag <code>pausentee</code> (siehe <code>database.rules.json</code> im Repository). Danach diese Seite neu laden.</p></div>`; return; }
@@ -658,6 +735,7 @@ function render(){
   const E = evaluate();
   main.innerHTML = ({spiele: vSpiele, tabelle: vTabelle, spieler: vSpieler, wettbewerb: vWettbewerb, mehr: vMehr}[view] || vSpiele)(ms, cur, E);
   bind(main, ms, E);
+  fixVfb(main);
   window.scrollTo(0, y);
   tickCountdowns();
 }
@@ -732,8 +810,12 @@ function vSpiele(ms, cur, E){
     const rProv = (m.hs != null && m.as != null) ? {h: m.hs, a: m.as} : null;
     h += `<h2>Läuft gerade</h2><div class="card hl">${metaLine(m)}
       ${teamsBlock(m, `<div><div class="score">${rProv ? rProv.h + ':' + rProv.a : '–:–'}</div><div class="center"><span class="live">${esc(m.clock && m.clock !== "0'" ? m.clock : 'LIVE')}</span></div></div>`)}
+      ${(() => { loadScoreboard(m.comp); const ev = ((scoreboards[m.comp] || {}).events || []).find(x => x.id === m.id); if (!ev || !ev.ev.length) return '';
+        const row = x => `${x.red ? '🟥' : '⚽'} ${esc(x.min)} ${esc(x.name)}${x.pen ? ' (Elfmeter)' : ''}${x.og ? ' (Eigentor)' : ''}`;
+        return `<div class="evs" style="margin:4px 0 10px">${ev.ev.filter(x => x.team === m.home.id).map(x => `<div class="l">${row(x)}</div>`).join('')}${ev.ev.filter(x => x.team === m.away.id).map(x => `<div class="r">${row(x)}</div>`).join('')}</div>`; })()}
       <div class="small muted center">Wenn es so bleibt:</div>
-      ${allTipsList(m, rProv, true)}</div>`;
+      ${allTipsList(m, rProv, true)}
+      <button class="btn sec" style="margin-top:12px" data-goc="${m.comp}">📺 Liveticker und Live-Tabelle</button></div>`;
   }
   const next = up[0];
   if (next) {
@@ -918,18 +1000,24 @@ function vWettbewerb(ms, cur, E){
   const nextC = cm.find(m => m.t > now() && !result(m));
   h += `<div class="card"><div class="row">${compLogo(compSel) ? `<img src="${compLogo(compSel)}" style="width:48px;height:48px;object-fit:contain" alt="">` : ''}<div class="grow"><b style="font-size:18px">${esc(compName(compSel))}</b>
     <div class="small muted">${nextC ? `Nächstes Spiel: ${nextC.round ? esc(nextC.round) + ', ' : ''}${nextC.vfbHome ? 'gegen' : 'bei'} ${esc(opp(nextC).name)}, ${esc(fmtWhen(nextC))}` : 'Aktuell kein Spiel angesetzt'}</div></div></div></div>`;
+  loadScoreboard(compSel);
+  const sb = scoreboards[compSel], evs = (sb && sb.events) || [];
+  const isLiveC = evs.some(e => e.state === 'in');
+  if (isLiveC) h += `<h2>Liveticker</h2><div class="card" style="padding:6px 16px">${tickerHtml(evs)}<div class="small muted center" style="margin-top:8px">aktualisiert sich alle 30 Sekunden</div></div>`;
   if (COMPS[compSel].table) {
     const st = standings[compSel];
     loadStandings(compSel);
     if (!st) h += `<div class="card empty">Tabelle lädt …</div>`;
     else if (!st.groups.length) h += `<div class="card empty">Tabelle gerade nicht verfügbar.</div>`;
     else for (const g of st.groups) {
-      h += `<h2>${esc(g.name.replace(/^\d{4}-\d{2}\s*/, '').replace('League Phase', 'Ligaphase').replace('German Bundesliga', 'Tabelle'))}</h2><div class="card" style="padding:10px 8px"><table class="league">
+      const title = g.name.replace(/^\d{4}-\d{2}\s*/, '').replace('League Phase', 'Ligaphase').replace('German Bundesliga', 'Tabelle');
+      const rows = isLiveC ? liveTable(g.entries, evs) : g.entries.map(e => ({...e, newRank: e.rank, chg: 0, live: null}));
+      h += `<h2>${isLiveC ? 'Live-Tabelle' : esc(title)}</h2><div class="card" style="padding:10px 8px"><table class="league">
         <tr><th></th><th>Verein</th><th>Sp</th><th>TD</th><th>Pkt</th></tr>
-        ${g.entries.map(e => `<tr class="${e.id === VFB ? 'vfb' : ''}"><td class="p" style="border-left-color:${e.color || 'transparent'}">${e.rank}</td>
-          <td><div class="row" style="gap:8px"><img src="${esc(e.logo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="ell">${esc(e.name)}</span></div></td>
-          <td class="n">${esc(e.gp)}</td><td class="n">${esc(e.gd)}</td><td class="n"><b>${esc(e.pts)}</b></td></tr>`).join('')}
-      </table></div>`;
+        ${rows.map(e => `<tr class="${e.id === VFB ? 'vfb' : ''}"><td class="p" style="border-left-color:${e.color || 'transparent'}">${e.newRank}${e.chg ? `<span class="chg ${e.chg > 0 ? 'up' : 'down'}">${e.chg > 0 ? '▲' : '▼'}</span>` : ''}</td>
+          <td><div class="row" style="gap:8px"><img src="${esc(e.logo)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'"><span class="ell">${esc(e.name)}</span>${e.live ? `<span class="lv ${e.live.on ? 'on' : ''}">${esc(e.live.score)}</span>` : ''}</div></td>
+          <td class="n">${e.gpN || esc(e.gp)}</td><td class="n">${e.gdN > 0 ? '+' + e.gdN : e.gdN}</td><td class="n"><b>${e.ptsN}</b></td></tr>`).join('')}
+      </table>${isLiveC ? '<div class="small muted" style="margin:8px 4px 0">So stünde die Tabelle, wenn alle Spiele jetzt enden. ▲▼ zeigt die Veränderung zum Stand vor dem Spieltag.</div>' : ''}</div>`;
     }
   }
   const played = cm.filter(m => result(m) || (m.completed && m.hs != null)).reverse();
@@ -978,6 +1066,7 @@ function bind(main, ms, E){
   main.querySelectorAll('tr[data-u]').forEach(tr => tr.onclick = () => { const d = tr.querySelector('.ubd'); if (d && d.innerHTML.trim()) { d.hidden = !d.hidden; d.hidden ? openU.delete(tr.dataset.u) : openU.add(tr.dataset.u); } });
   main.querySelectorAll('details[data-d]').forEach(d => d.ontoggle = () => d.open ? openD.add(d.dataset.d) : openD.delete(d.dataset.d));
   main.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { compSel = b.dataset.c; render(); });
+  main.querySelectorAll('[data-goc]').forEach(b => b.onclick = () => { compSel = b.dataset.goc; view = 'wettbewerb'; localStorage.setItem('pausentee-view', view); window.scrollTo(0, 0); render(); });
   main.querySelectorAll('[data-p]').forEach(b => b.onclick = () => {
     const [mid, pid] = b.dataset.p.split('|'); const sel = voteDraft[mid] || (voteDraft[mid] = []);
     const i = sel.indexOf(pid); if (i >= 0) sel.splice(i, 1); else if (sel.length < 3) sel.push(pid); else toast('Drei sind gewählt. Tippe einen an, um ihn abzuwählen.');
