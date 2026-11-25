@@ -514,7 +514,7 @@ function renderLogin(){
   $('#main').innerHTML = `
     <div class="card">
       <h2 style="margin-top:4px">So läuft's</h2>
-      <div class="how"><span>⚽</span><div>Vor jedem VfB-Spiel das Ergebnis tippen, bis zum Anpfiff.</div></div>
+      <div class="how"><span>⚽</span><div>Vor jedem VfB-Spiel das Ergebnis tippen. Bis zum Anpfiff lässt sich der Tipp noch ändern.</div></div>
       <div class="how"><span>🏆</span><div>Tendenz 2 Punkte, Tordifferenz, VfB-Tore und Gegentore je 1. Exakt getippt gibt 5.</div></div>
       <div class="how"><span>🃏</span><div>Einmal pro Hin- und Rückrunde ein Joker für doppelte Punkte.</div></div>
       <div class="how"><span>⭐</span><div>Nach dem Spiel die drei besten VfB-Spieler wählen.</div></div>
@@ -599,18 +599,19 @@ function stepTip(m, side, d){
   if (h == null || a == null) { h = h ?? 0; a = a ?? 0; }
   if (side === 'h') h = Math.max(0, Math.min(15, h + d)); else a = Math.max(0, Math.min(15, a + d));
   draft[m.id] = {h, a, j: !!cur.j};
-  saveTip(m);
+  const sv = tipOf(m.id, me);
+  if (sv && sv.h === h && sv.a === a) delete draft[m.id];
   render();
 }
-function saveTip(m){
-  clearTimeout(saveTip['_' + m.id]);
-  saveTip['_' + m.id] = setTimeout(async () => {
-    const t = draft[m.id]; if (!t) return;
-    if (now() >= m.t) { delete draft[m.id]; toast('Zu spät, Anpfiff war schon'); render(); return; }
-    try { await db.ref(`${ROOT}/tips/${m.id}/${me}`).set({h: t.h, a: t.a, j: !!t.j, at: firebase.database.ServerValue.TIMESTAMP}); delete draft[m.id]; }
-    catch (e) { toast('Tipp nicht gespeichert: ' + e.message); }
-    render();
-  }, 450);
+const isPending = mid => { const d = draft[mid], sv = tipOf(mid, me); return !!d && !(sv && sv.h === d.h && sv.a === d.a); };
+async function submitTip(m, btn){
+  const t = draft[m.id]; if (!t) return;
+  if (now() >= m.t) { delete draft[m.id]; toast('Zu spät, Anpfiff war schon'); render(); return; }
+  if (btn) btn.disabled = true;
+  const had = !!tipOf(m.id, me);
+  try { await db.ref(`${ROOT}/tips/${m.id}/${me}`).set({h: t.h, a: t.a, j: !!t.j, at: firebase.database.ServerValue.TIMESTAMP}); delete draft[m.id]; toast(had ? 'Tipp geändert' : 'Tipp abgegeben'); }
+  catch (e) { toast('Tipp nicht gespeichert: ' + e.message); if (btn) btn.disabled = false; }
+  render();
 }
 function jokerElsewhere(m){
   for (const [mid, by] of Object.entries(D.tips || {})) {
@@ -622,7 +623,8 @@ function jokerElsewhere(m){
 }
 async function toggleJoker(m){
   if (now() >= m.t) return;
-  const t = myTip(m.id);
+  if (isPending(m.id)) { toast('Erst den Tipp abgeben, dann den Joker setzen'); return; }
+  const t = tipOf(m.id, me);
   if (!t || t.h == null) { toast('Erst tippen, dann Joker setzen'); return; }
   const other = jokerElsewhere(m);
   if (!t.j && other && other.t <= now()) { toast(`Joker der ${halfName(m.t)} schon gegen ${opp(other).name} eingesetzt`); return; }
@@ -675,14 +677,16 @@ function metaLine(m){
 }
 function tipStepper(m){
   const t = myTip(m.id) || {};
-  const saved = tipOf(m.id, me), pending = !!draft[m.id];
+  const saved = tipOf(m.id, me), pending = isPending(m.id);
   const jo = jokerElsewhere(m), jokerUsed = !t.j && jo && jo.t <= now();
   return `<div class="tip">
       <div class="step"><button data-s="${m.id}|h|-1" aria-label="weniger">−</button><b class="${t.h == null ? 'q' : ''}">${t.h ?? '?'}</b><button data-s="${m.id}|h|1" aria-label="mehr">+</button></div>
       <div class="colon">:</div>
       <div class="step"><button data-s="${m.id}|a|-1" aria-label="weniger">−</button><b class="${t.a == null ? 'q' : ''}">${t.a ?? '?'}</b><button data-s="${m.id}|a|1" aria-label="mehr">+</button></div>
     </div>
-    <div class="tipstate ${saved && !pending ? 'ok' : ''}">${pending ? 'Speichert …' : saved ? `✓ Dein Tipp ${saved.h}:${saved.a} ist gespeichert` : 'Noch nicht getippt'}</div>
+    ${pending ? `<button class="btn" style="margin-top:12px" data-go="${m.id}">${saved ? `Tipp auf ${t.h}:${t.a} ändern` : `Tipp ${t.h}:${t.a} abgeben`}</button>
+      <div class="tipstate" style="color:var(--red)">${saved ? `Noch gilt dein alter Tipp ${saved.h}:${saved.a}` : 'Noch nicht abgegeben'}</div>`
+    : `<div class="tipstate ${saved ? 'ok' : ''}">${saved ? `✓ Dein Tipp ${saved.h}:${saved.a} ist abgegeben.<br><span class="muted">Bis zum Anpfiff kannst du ihn mit + und − noch ändern.</span>` : 'Mit + und − einstellen, dann abgeben'}</div>`}
     <button class="joker ${t.j ? 'on' : ''}" data-j="${m.id}" ${jokerUsed ? 'disabled' : ''}>🃏 ${t.j ? 'Joker aktiv: doppelte Punkte' : jokerUsed ? `Joker der ${halfName(m.t)} verbraucht` : jo ? `Joker hierher holen (liegt bei ${esc(opp(jo).name)})` : `Joker setzen (1× pro ${halfName(m.t)})`}</button>`;
 }
 function whoTipped(m){
@@ -757,7 +761,9 @@ function upcomingRow(m){
       <button data-s="${m.id}|h|-1" aria-label="weniger">−</button><b class="${t.h == null ? 'q' : ''}">${t.h ?? '?'}</b><button data-s="${m.id}|h|1" aria-label="mehr">+</button>
       <span class="colon" style="font-size:18px;margin:0 4px">:</span>
       <button data-s="${m.id}|a|-1" aria-label="weniger">−</button><b class="${t.a == null ? 'q' : ''}">${t.a ?? '?'}</b><button data-s="${m.id}|a|1" aria-label="mehr">+</button>
-      <img src="${esc(m.away.logo)}" alt="" loading="lazy"></div></div>`;
+      <img src="${esc(m.away.logo)}" alt="" loading="lazy"></div>
+    ${isPending(m.id) ? `<div class="center" style="margin-top:8px"><button class="btn small" data-go="${m.id}">${tipOf(m.id, me) ? `Auf ${t.h}:${t.a} ändern` : `Tipp ${t.h}:${t.a} abgeben`}</button></div>`
+      : tipOf(m.id, me) ? '<div class="center small" style="margin-top:6px;color:var(--ok)">✓ abgegeben</div>' : ''}</div>`;
 }
 function doneRow(m, E){
   const r = result(m), h = E.hist.find(x => x.m.id === m.id), mine = h && h.per[me];
@@ -937,7 +943,7 @@ function vMehr(){
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
   return `<h2>Du</h2><div class="card"><div class="row between"><div><b style="font-size:18px">${esc(dName(u))}</b></div><button class="btn sec small" id="logout">Abmelden</button></div></div>
   <h2>Regeln</h2><div class="card"><ul class="rules">
-    <li>Jeder tippt das Ergebnis, zum Beispiel 2:1. Getippt wird bis zum Anpfiff, danach ist gesperrt.</li>
+    <li>Jeder tippt das Ergebnis, zum Beispiel 2:1. Bis zum Anpfiff kannst du deinen Tipp beliebig oft ändern, danach ist gesperrt.</li>
     <li><b>Punkte:</b> Tendenz 2, Tordifferenz 1, VfB-Tore 1, Gegentore 1. Das exakte Ergebnis bringt damit 5 Punkte.</li>
     <li><b>Joker:</b> Einmal pro Hinrunde (bis Dezember) und einmal pro Rückrunde (ab Januar) zählt ein Spiel doppelt. Bis zum Anpfiff lässt er sich verschieben.</li>
     <li>Die Tipps der anderen siehst du erst ab Anpfiff.</li>
@@ -961,6 +967,7 @@ function vMehr(){
 function bind(main, ms, E){
   main.querySelectorAll('[data-s]').forEach(b => b.onclick = e => { e.preventDefault(); e.stopPropagation(); const [id, side, d] = b.dataset.s.split('|'); const m = ms.find(x => x.id === id); if (m) stepTip(m, side, +d); });
   main.querySelectorAll('[data-j]').forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.j); if (m) toggleJoker(m); });
+  main.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { const m = ms.find(x => x.id === b.dataset.go); if (m) submitTip(m, b); });
   main.querySelectorAll('[data-wa]').forEach(b => b.onclick = () => {
     const m = ms.find(x => x.id === b.dataset.wa); if (!m) return;
     const open = users().filter(u => !tipOf(m.id, u.k)).map(dName);
