@@ -12,6 +12,9 @@
 <meta name="apple-mobile-web-app-title" content="Pausentee">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#e2001a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@1,800&display=swap" rel="stylesheet">
 <style>
 :root{
   --red:#e2001a; --red-dark:#b30015; --red-soft:#fdecee;
@@ -31,13 +34,13 @@ a{color:var(--red)}
 .top{background:#fff;padding-top:env(safe-area-inset-top)}
 .ring{background:var(--red);color:#fff;display:flex;align-items:center;gap:12px;padding:10px 16px;margin-top:14px;box-shadow:0 2px 0 var(--red-dark)}
 .ring .crest{width:44px;height:44px;background:#fff;border-radius:50%;padding:4px;flex:none}
-.ring h1{margin:0;font-size:24px;letter-spacing:.5px;font-weight:800;line-height:1}
+.ring h1{margin:0;font-family:'Barlow Condensed',sans-serif;font-style:italic;font-weight:800;font-size:33px;text-transform:uppercase;letter-spacing:.5px;line-height:1}
 .ring small{display:block;font-size:12px;opacity:.9;margin-top:3px;letter-spacing:.3px}
 .ring .grow{flex:1;min-width:0}
 .ring .comp{width:40px;height:40px;background:#fff;border-radius:10px;padding:4px;flex:none;object-fit:contain}
 .top .sub{height:14px}
 
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:22px 4px 8px;font-weight:700}
+h2{font-family:'Barlow Condensed',sans-serif;font-style:italic;font-weight:800;font-size:17px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin:22px 4px 8px}
 .card{background:var(--card);border-radius:var(--r);padding:16px;margin:10px 0;box-shadow:0 1px 2px rgba(0,0,0,.05)}
 .card.hl{border:2px solid var(--red)}
 .muted{color:var(--muted)}
